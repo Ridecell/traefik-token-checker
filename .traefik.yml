@@ -1,0 +1,21 @@
+# The name of your plugin as displayed in the Plugins Catalog web UI.
+displayName: Traefik Token Checker
+
+type: middleware
+
+# The import path of your plugin.
+import: github.com/Ridecell/traefik-token-checker
+
+summary: Description of what my plugin is doing
+
+# Medias associated to the plugin (optional)
+iconPath: images/icon.png
+bannerPath: images/icon.png
+
+# Configuration data for your plugin.
+# This is mandatory,
+# and Plugins Catalog will try to execute the plugin with the data you provide as part of its startup validity tests.
+testData:
+  LogLevel: "INFO"
+  RedisPort: 6379
+  RedisHost: "127.0.0.1"
