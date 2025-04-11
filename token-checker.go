@@ -115,8 +115,6 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	devToken := req.Header.Get("Developer-token")
 
 	if authToken != "" || devToken != "" {
-		LoggerDEBUG.Println("Authorization Token:", authToken)
-		LoggerDEBUG.Println("Developer Token:", devToken)
 
 		conn, err := jwt.getRedisConnection()
 		if err != nil {
