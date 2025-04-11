@@ -21,7 +21,7 @@ type Config struct {
 
 func CreateConfig() *Config {
 	return &Config{
-		LogLevel: "INFO",
+		LogLevel: "ERROR",
 	}
 }
 
@@ -32,32 +32,19 @@ type JWT struct {
 }
 
 var (
-	LoggerDEBUG   = log.New(io.Discard, "DEBUG: tokenChecker: ", log.Ldate|log.Ltime|log.Lshortfile)
-	LoggerINFO    = log.New(io.Discard, "INFO: tokenChecker: ", log.Ldate|log.Ltime|log.Lshortfile)
-	LoggerWARNING = log.New(io.Discard, "WARNING: tokenChecker: ", log.Ldate|log.Ltime|log.Lshortfile)
-	LoggerERROR   = log.New(io.Discard, "ERROR: tokenChecker: ", log.Ldate|log.Ltime|log.Lshortfile)
+	LoggerDEBUG = log.New(io.Discard, "DEBUG: tokenChecker: ", log.Ldate|log.Ltime|log.Lshortfile)
+	LoggerERROR = log.New(io.Discard, "ERROR: tokenChecker: ", log.Ldate|log.Ltime|log.Lshortfile)
 )
 
 func SetLogger(level string) {
 	switch level {
 	case "ERROR":
 		LoggerERROR.SetOutput(os.Stderr)
-	case "WARNING":
-		LoggerERROR.SetOutput(os.Stderr)
-		LoggerWARNING.SetOutput(os.Stderr)
-	case "INFO":
-		LoggerERROR.SetOutput(os.Stderr)
-		LoggerWARNING.SetOutput(os.Stderr)
-		LoggerINFO.SetOutput(os.Stdout)
 	case "DEBUG":
 		LoggerERROR.SetOutput(os.Stderr)
-		LoggerWARNING.SetOutput(os.Stderr)
-		LoggerINFO.SetOutput(os.Stdout)
 		LoggerDEBUG.SetOutput(os.Stdout)
 	default:
 		LoggerERROR.SetOutput(os.Stderr)
-		LoggerWARNING.SetOutput(os.Stderr)
-		LoggerINFO.SetOutput(os.Stdout)
 	}
 }
 
