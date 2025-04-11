@@ -28,9 +28,8 @@ Here are the available configuration options for this plugin:
 
 | Key         | Description                          | Required | Default |
 |-------------|--------------------------------------|----------|---------|
-| `redisHost` | Redis server hostname or IP          | ✅       | —       |
-| `redisPort` | Redis server port                    | ✅       | —       |
-| `logLevel`  | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` | ❌       | `INFO`  |
+| `RedisURL` | Full Redis URL including password, e.g. redis://:mypassword@localhost:6379                    | ✅       | —       |
+| `LogLevel`  | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` | ❌       | `INFO`  |
 
 ### Example Configuration (Static)
 

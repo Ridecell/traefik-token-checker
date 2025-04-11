@@ -1,5 +1,4 @@
-// Package traefik_token_checker is a Traefik middleware plugin that checks token headers against Redis.
-package traefik_token_checker
+package uiddemo
 
 import (
 	"bufio"
@@ -9,15 +8,15 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	RedisHost string `json:"redisHost,omitempty"`
-	RedisPort string `json:"redisPort,omitempty"`
-	LogLevel  string `json:"logLevel,omitempty"`
+	RedisURL string `json:"redisURL,omitempty"`
+	LogLevel string `json:"logLevel,omitempty"`
 }
 
 func CreateConfig() *Config {
@@ -62,10 +61,9 @@ func SetLogger(level string) {
 	}
 }
 
-// New creates a new middleware instance.
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	if config.RedisHost == "" || config.RedisPort == "" {
-		return nil, fmt.Errorf("RedisHost is required")
+	if config.RedisURL == "" {
+		return nil, fmt.Errorf("redisURL is required")
 	}
 	SetLogger(config.LogLevel)
 	return &JWT{
@@ -75,71 +73,112 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	}, nil
 }
 
+func (jwt *JWT) getRedisConnection() (net.Conn, error) {
+	u, err := url.Parse(jwt.config.RedisURL)
+	if err != nil || u.Scheme != "redis" {
+		return nil, fmt.Errorf("redis URL parse error")
+	}
+
+	port := u.Port()
+	if port == "" {
+		port = "6379"
+	}
+
+	address := net.JoinHostPort(u.Hostname(), port)
+	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("could not connect to Redis")
+	}
+
+	password, _ := u.User.Password()
+	if password == "" {
+		return nil, fmt.Errorf("empty Redis password")
+	}
+
+	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
+	if _, err := conn.Write([]byte(authCmd)); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("redis AUTH send failed")
+	}
+
+	authResp, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil || !strings.HasPrefix(authResp, "+OK") {
+		conn.Close()
+		return nil, fmt.Errorf("redis AUTH failed")
+	}
+
+	return conn, nil
+}
+
 func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	authToken := req.Header.Get("Authorization")
 	devToken := req.Header.Get("Developer-token")
 
-	LoggerDEBUG.Println("Authorization Token:", authToken)
-	LoggerDEBUG.Println("Developer Token:", devToken)
+	if authToken != "" || devToken != "" {
+		LoggerDEBUG.Println("Authorization Token:", authToken)
+		LoggerDEBUG.Println("Developer Token:", devToken)
 
-	isAuthBlacklisted, err := jwt.isTokenBlacklisted(authToken)
-	if err != nil {
-		LoggerERROR.Printf("Error checking auth token in Redis: %v", err)
-		http.Error(rw, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
-	isDevBlacklisted, err := jwt.isTokenBlacklisted(devToken)
-	if err != nil {
-		LoggerERROR.Printf("Error checking dev token in Redis: %v", err)
-		http.Error(rw, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if isAuthBlacklisted || isDevBlacklisted {
-		LoggerDEBUG.Println("Blacklisted token detected, blocking request")
-		rw.Header().Set("Content-Type", "application/json")
-		if req.Header.Get("origin") != "" {
-			rw.Header().Set("Access-Control-Allow-Origin", req.Header.Get("origin"))
+		conn, err := jwt.getRedisConnection()
+		if err != nil {
+			LoggerERROR.Printf("Error getting Redis connection: %v", err)
+			http.Error(rw, "Internal error", http.StatusInternalServerError)
+			return
 		}
-		rw.WriteHeader(http.StatusUnauthorized)
-		rw.Write([]byte(`{"error_msg":"blacklisted_token"}`))
-		return
+		defer conn.Close()
+		isAuthBlacklisted := false
+		isDevBlacklisted := false
+
+		isAuthBlacklisted, err = jwt.checkToken(conn, authToken)
+		if err != nil {
+			LoggerERROR.Printf("Error checking auth token: %v", err)
+			http.Error(rw, "Internal error", http.StatusInternalServerError)
+			return
+		}
+
+		isDevBlacklisted, err = jwt.checkToken(conn, devToken)
+		if err != nil {
+			LoggerERROR.Printf("Error checking dev token: %v", err)
+			http.Error(rw, "Internal error", http.StatusInternalServerError)
+			return
+		}
+
+		if isAuthBlacklisted || isDevBlacklisted {
+			LoggerDEBUG.Println("Blacklisted token detected, blocking request")
+			rw.Header().Set("Content-Type", "application/json")
+			if req.Header.Get("origin") != "" {
+				rw.Header().Set("Access-Control-Allow-Origin", req.Header.Get("origin"))
+			}
+			rw.WriteHeader(http.StatusUnauthorized)
+			rw.Write([]byte(`{"error_msg":"blacklisted_token"}`))
+			return
+		}
 	}
+
 	LoggerDEBUG.Println("Blacklisted token not found, forwarding request")
 	jwt.next.ServeHTTP(rw, req)
 }
 
-func (jwt *JWT) isTokenBlacklisted(token string) (bool, error) {
-	if token == "" || !(strings.Contains(token, "JWT ")) {
+func (jwt *JWT) checkToken(conn net.Conn, rawToken string) (bool, error) {
+	if !strings.HasPrefix(rawToken, "JWT ") {
 		return false, nil
 	}
 
-	token = strings.TrimPrefix(token, "JWT ")
-	LoggerDEBUG.Printf("Checking Redis for token: %s", token)
+	token := strings.TrimPrefix(rawToken, "JWT ")
+	LoggerDEBUG.Printf("Checking token in Redis: %s", token)
 
-	address := net.JoinHostPort(jwt.config.RedisHost, jwt.config.RedisPort)
-	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
-	if err != nil {
-		return false, fmt.Errorf("failed to connect to Redis: %w", err)
-	}
-	defer conn.Close()
-
-	// using RESP protocol for redis. DOC: https://redis-doc-test.readthedocs.io/en/latest/topics/protocol/
 	cmd := fmt.Sprintf("*2\r\n$6\r\nEXISTS\r\n$%d\r\n%s\r\n", len(token), token)
-	_, err = conn.Write([]byte(cmd))
-	if err != nil {
-		return false, fmt.Errorf("failed to write to Redis: %w", err)
+	if _, err := conn.Write([]byte(cmd)); err != nil {
+		return false, fmt.Errorf("redis EXISTS send failed")
 	}
 
-	reader := bufio.NewReader(conn)
-	reply, err := reader.ReadString('\n')
+	reply, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
-		return false, fmt.Errorf("failed to read from Redis: %w", err)
+		return false, fmt.Errorf("eedis EXISTS response read failed")
 	}
 
 	reply = strings.TrimSpace(reply)
-	LoggerDEBUG.Printf("Redis response: %s", reply)
+	LoggerDEBUG.Printf("Redis EXISTS reply: %s", reply)
+
 	switch reply {
 	case ":1":
 		return true, nil

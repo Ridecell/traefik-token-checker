@@ -17,5 +17,4 @@ bannerPath: images/icon.png
 # and Plugins Catalog will try to execute the plugin with the data you provide as part of its startup validity tests.
 testData:
   LogLevel: "INFO"
-  RedisPort: 6379
-  RedisHost: "127.0.0.1"
+  RedisURL: "redis://:mysecretpassword@localhost:6379"
