@@ -121,7 +121,7 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		conn, err := jwt.getRedisConnection()
 		if err != nil {
 			LoggerERROR.Printf("Error getting Redis connection: %v", err)
-			http.Error(rw, "Internal error", http.StatusInternalServerError)
+			jwt.next.ServeHTTP(rw, req)
 			return
 		}
 		defer conn.Close()
@@ -131,15 +131,11 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		isAuthBlacklisted, err = jwt.checkToken(conn, authToken)
 		if err != nil {
 			LoggerERROR.Printf("Error checking auth token: %v", err)
-			http.Error(rw, "Internal error", http.StatusInternalServerError)
-			return
 		}
 
 		isDevBlacklisted, err = jwt.checkToken(conn, devToken)
 		if err != nil {
 			LoggerERROR.Printf("Error checking dev token: %v", err)
-			http.Error(rw, "Internal error", http.StatusInternalServerError)
-			return
 		}
 
 		if isAuthBlacklisted || isDevBlacklisted {
@@ -164,7 +160,6 @@ func (jwt *JWT) checkToken(conn net.Conn, rawToken string) (bool, error) {
 	}
 
 	token := strings.TrimPrefix(rawToken, "JWT ")
-	LoggerDEBUG.Printf("Checking token in Redis: %s", token)
 
 	cmd := fmt.Sprintf("*2\r\n$6\r\nEXISTS\r\n$%d\r\n%s\r\n", len(token), token)
 	if _, err := conn.Write([]byte(cmd)); err != nil {
@@ -177,7 +172,6 @@ func (jwt *JWT) checkToken(conn net.Conn, rawToken string) (bool, error) {
 	}
 
 	reply = strings.TrimSpace(reply)
-	LoggerDEBUG.Printf("Redis EXISTS reply: %s", reply)
 
 	switch reply {
 	case ":1":
