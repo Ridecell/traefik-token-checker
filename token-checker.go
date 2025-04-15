@@ -1,4 +1,4 @@
-package uiddemo
+package traefik_token_checker
 
 import (
 	"bufio"
@@ -153,7 +153,7 @@ func (jwt *JWT) checkToken(conn net.Conn, rawToken string) (bool, error) {
 
 	reply, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
-		return false, fmt.Errorf("eedis EXISTS response read failed")
+		return false, fmt.Errorf("redis EXISTS response read failed")
 	}
 
 	reply = strings.TrimSpace(reply)
