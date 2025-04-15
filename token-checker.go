@@ -3,6 +3,7 @@ package traefik_token_checker
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -62,8 +63,9 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 
 func (jwt *JWT) getRedisConnection() (net.Conn, error) {
 	u, err := url.Parse(jwt.config.RedisURL)
-	if err != nil || u.Scheme != "redis" {
-		return nil, fmt.Errorf("redis URL parse error")
+	if err != nil || (u.Scheme != "rediss" && u.Scheme != "redis") {
+		fmt.Printf("Invalid Redis URL")
+		os.Exit(1)
 	}
 
 	port := u.Port()
@@ -72,10 +74,13 @@ func (jwt *JWT) getRedisConnection() (net.Conn, error) {
 	}
 
 	address := net.JoinHostPort(u.Hostname(), port)
-	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", address, &tls.Config{
+		ServerName: u.Hostname(), // Important for AWS TLS certs
+	})
 	if err != nil {
-		return nil, fmt.Errorf("could not connect to Redis")
 	}
+
+	LoggerDEBUG.Println("Connected to Redis over TLS")
 
 	password, _ := u.User.Password()
 	if password == "" {
