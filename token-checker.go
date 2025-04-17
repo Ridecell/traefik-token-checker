@@ -3,33 +3,35 @@ package traefik_token_checker
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
-	"time"
+
+	"github.com/Ridecell/traefik-token-checker/redispool"
 )
 
 type Config struct {
 	RedisURL string `json:"redisURL,omitempty"`
 	LogLevel string `json:"logLevel,omitempty"`
+	PoolSize int    `json:"poolSize,omitempty"`
 }
 
 func CreateConfig() *Config {
 	return &Config{
 		LogLevel: "ERROR",
+		PoolSize: 50,
 	}
 }
 
 type JWT struct {
-	next   http.Handler
-	name   string
-	config *Config
+	next      http.Handler
+	name      string
+	config    *Config
+	redisPool *redispool.Pool
 }
 
 var (
@@ -40,12 +42,12 @@ var (
 func SetLogger(level string) {
 	switch level {
 	case "ERROR":
-		LoggerERROR.SetOutput(os.Stderr)
+		LoggerERROR.SetOutput(os.Stdout)
 	case "DEBUG":
-		LoggerERROR.SetOutput(os.Stderr)
+		LoggerERROR.SetOutput(os.Stdout)
 		LoggerDEBUG.SetOutput(os.Stdout)
 	default:
-		LoggerERROR.SetOutput(os.Stderr)
+		LoggerERROR.SetOutput(os.Stdout)
 	}
 }
 
@@ -54,52 +56,17 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		return nil, fmt.Errorf("redisURL is required")
 	}
 	SetLogger(config.LogLevel)
-	return &JWT{
-		next:   next,
-		name:   name,
-		config: config,
-	}, nil
-}
-
-func (jwt *JWT) getRedisConnection() (net.Conn, error) {
-	u, err := url.Parse(jwt.config.RedisURL)
-	if err != nil || (u.Scheme != "rediss" && u.Scheme != "redis") {
-		fmt.Printf("Invalid Redis URL")
-		os.Exit(1)
-	}
-
-	port := u.Port()
-	if port == "" {
-		port = "6379"
-	}
-
-	address := net.JoinHostPort(u.Hostname(), port)
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", address, &tls.Config{
-		ServerName: u.Hostname(), // Important for AWS TLS certs
-	})
+	pool, err := redispool.New(config.RedisURL, config.PoolSize, LoggerDEBUG)
 	if err != nil {
+		return nil, err
 	}
 
-	LoggerDEBUG.Println("Connected to Redis over TLS")
-
-	password, _ := u.User.Password()
-	if password == "" {
-		return nil, fmt.Errorf("empty Redis password")
-	}
-
-	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(password), password)
-	if _, err := conn.Write([]byte(authCmd)); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("redis AUTH send failed")
-	}
-
-	authResp, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil || !strings.HasPrefix(authResp, "+OK") {
-		conn.Close()
-		return nil, fmt.Errorf("redis AUTH failed")
-	}
-
-	return conn, nil
+	return &JWT{
+		next:      next,
+		name:      name,
+		config:    config,
+		redisPool: pool,
+	}, nil
 }
 
 func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -108,13 +75,13 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	if authToken != "" || devToken != "" {
 
-		conn, err := jwt.getRedisConnection()
+		conn, err := jwt.redisPool.Get()
 		if err != nil {
 			LoggerERROR.Printf("Error getting Redis connection: %v", err)
 			jwt.next.ServeHTTP(rw, req)
 			return
 		}
-		defer conn.Close()
+		defer jwt.redisPool.Put(conn)
 		isAuthBlacklisted := false
 		isDevBlacklisted := false
 
@@ -139,7 +106,6 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-
 	LoggerDEBUG.Println("Blacklisted token not found, forwarding request")
 	jwt.next.ServeHTTP(rw, req)
 }
