@@ -74,6 +74,7 @@ func (p *Pool) Put(conn net.Conn) {
 
 func (p *Pool) connect() (net.Conn, error) {
 	port := p.url.Port()
+	p.logger.Printf("Connecting to Redis at %s\n and port %s\n", p.url.Hostname(), port)
 	if port == "" {
 		port = "6379"
 	}
@@ -85,6 +86,8 @@ func (p *Pool) connect() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	p.logger.Println("Connected to Redis over TLS")
 
 	authCmd := fmt.Sprintf("*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(p.password), p.password)
 	if _, err := conn.Write([]byte(authCmd)); err != nil {
