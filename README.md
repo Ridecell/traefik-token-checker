@@ -30,7 +30,8 @@ Here are the available configuration options for this plugin:
 |-------------|--------------------------------------|----------|---------|
 | `RedisURL` | Full Redis URL including password, e.g. redis://:mypassword@localhost:6379                    | ✅       | —       |
 | `LogLevel`  | Logging level: `DEBUG`, `ERROR` | ❌       | `INFO`  |
-| `IdleTimeInSeconds`  | Time duration in seconds to close connections from pool | ❌       | 60 `s`  |
+| `IdleTimeInSeconds`  | Time duration in seconds to close connections from pool | ❌       | 50  |
+| `PoolSize`  | Size of the connection pool | ❌       | 60 `s`  |
 
 ### Example Configuration (Static)
 
