@@ -25,7 +25,6 @@ type pooledConn struct {
 }
 
 func New(redisURL string, poolSize int, idleTimeout time.Duration, logger *log.Logger) (*Pool, error) {
-	log.Printf("Redis URL being parsed")
 	u, err := url.Parse(redisURL)
 	if err != nil || (u.Scheme != "rediss") {
 		return nil, fmt.Errorf("invalid Redis URL")
