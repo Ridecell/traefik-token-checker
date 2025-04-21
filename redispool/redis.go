@@ -12,15 +12,21 @@ import (
 )
 
 type Pool struct {
-	url      *url.URL
-	password string
-	conns    chan net.Conn
-	logger   *log.Logger
+	url         *url.URL
+	password    string
+	conns       chan *pooledConn
+	logger      *log.Logger
+	idleTimeout time.Duration
 }
 
-func New(redisURL string, poolSize int, logger *log.Logger) (*Pool, error) {
+type pooledConn struct {
+	conn     net.Conn
+	lastUsed time.Time
+}
+
+func New(redisURL string, poolSize int, idleTimeout time.Duration, logger *log.Logger) (*Pool, error) {
 	u, err := url.Parse(redisURL)
-	if err != nil || (u.Scheme != "rediss" && u.Scheme != "redis") {
+	if err != nil || (u.Scheme != "rediss") {
 		return nil, fmt.Errorf("invalid Redis URL")
 	}
 
@@ -30,18 +36,24 @@ func New(redisURL string, poolSize int, logger *log.Logger) (*Pool, error) {
 	}
 
 	return &Pool{
-		url:      u,
-		password: password,
-		conns:    make(chan net.Conn, poolSize),
-		logger:   logger,
+		url:         u,
+		password:    password,
+		conns:       make(chan *pooledConn, poolSize),
+		logger:      logger,
+		idleTimeout: idleTimeout,
 	}, nil
 }
 
 func (p *Pool) Get() (net.Conn, error) {
 	select {
-	case conn := <-p.conns:
-		p.logger.Println("Reusing Redis connection from pool")
-		return conn, nil
+	case pc := <-p.conns:
+		if time.Since(pc.lastUsed) > p.idleTimeout {
+			p.logger.Printf("Idle timeout exceeded for connection last used at %v, closing it\n", (time.Since(pc.lastUsed) - p.idleTimeout).String())
+			p.closeConn(pc.conn)
+			return p.connect()
+		}
+		p.logger.Printf("Reusing Redis connection from pool (last used at %v ago)\n", (time.Since(pc.lastUsed) - p.idleTimeout).String())
+		return pc.conn, nil
 	default:
 		p.logger.Println("Creating new Redis connection")
 		return p.connect()
@@ -49,12 +61,14 @@ func (p *Pool) Get() (net.Conn, error) {
 }
 
 func (p *Pool) Put(conn net.Conn) {
+	pc := &pooledConn{conn: conn, lastUsed: time.Now()}
+	p.logger.Printf("Returning Redis connection to pool (last used at %v)\n", pc.lastUsed)
 	select {
-	case p.conns <- conn:
-		p.logger.Println("Returning Redis connection to pool")
+	case p.conns <- pc:
+		p.logger.Println("Connection returned to pool")
 	default:
 		p.logger.Println("Pool full, closing Redis connection")
-		conn.Close()
+		p.closeConn(conn)
 	}
 }
 
@@ -66,8 +80,7 @@ func (p *Pool) connect() (net.Conn, error) {
 	address := net.JoinHostPort(p.url.Hostname(), port)
 
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", address, &tls.Config{
-		ServerName:         p.url.Hostname(),
-		InsecureSkipVerify: true,
+		ServerName: p.url.Hostname(),
 	})
 	if err != nil {
 		return nil, err
@@ -85,5 +98,12 @@ func (p *Pool) connect() (net.Conn, error) {
 		return nil, fmt.Errorf("redis AUTH failed: %s", authResp)
 	}
 
+	p.logger.Printf("New Redis connection established.")
+
 	return conn, nil
+}
+
+func (p *Pool) closeConn(conn net.Conn) {
+	conn.Close()
+	p.logger.Printf("Closed Redis connection.")
 }

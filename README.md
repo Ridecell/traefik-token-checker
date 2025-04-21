@@ -29,7 +29,8 @@ Here are the available configuration options for this plugin:
 | Key         | Description                          | Required | Default |
 |-------------|--------------------------------------|----------|---------|
 | `RedisURL` | Full Redis URL including password, e.g. redis://:mypassword@localhost:6379                    | ✅       | —       |
-| `LogLevel`  | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` | ❌       | `INFO`  |
+| `LogLevel`  | Logging level: `DEBUG`, `ERROR` | ❌       | `INFO`  |
+| `IdleTimeInSeconds`  | Time duration in seconds to close connections from pool | ❌       | 60 `s`  |
 
 ### Example Configuration (Static)
 
@@ -38,4 +39,4 @@ experimental:
   plugins:
     traefik-token-checker:
       moduleName: github.com/Ridecell/traefik-token-checker
-      version: v0.1.0
+      version: v0.0.1

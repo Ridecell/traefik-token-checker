@@ -10,20 +10,23 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Ridecell/traefik-token-checker/redispool"
 )
 
 type Config struct {
-	RedisURL string `json:"redisURL,omitempty"`
-	LogLevel string `json:"logLevel,omitempty"`
-	PoolSize int    `json:"poolSize,omitempty"`
+	RedisURL          string `json:"redisURL,omitempty"`
+	LogLevel          string `json:"logLevel,omitempty"`
+	PoolSize          int    `json:"poolSize,omitempty"`
+	IdleTimeInSeconds int    `json:"idleTime,omitempty"`
 }
 
 func CreateConfig() *Config {
 	return &Config{
-		LogLevel: "ERROR",
-		PoolSize: 50,
+		LogLevel:          "ERROR",
+		PoolSize:          50,
+		IdleTimeInSeconds: 60,
 	}
 }
 
@@ -56,7 +59,8 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		return nil, fmt.Errorf("redisURL is required")
 	}
 	SetLogger(config.LogLevel)
-	pool, err := redispool.New(config.RedisURL, config.PoolSize, LoggerDEBUG)
+	IdleTimeout := time.Duration(config.IdleTimeInSeconds) * time.Second
+	pool, err := redispool.New(config.RedisURL, config.PoolSize, IdleTimeout, LoggerDEBUG)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +106,7 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				rw.Header().Set("Access-Control-Allow-Origin", req.Header.Get("origin"))
 			}
 			rw.WriteHeader(http.StatusUnauthorized)
-			rw.Write([]byte(`{"error_msg":"blacklisted_token"}`))
+			rw.Write([]byte(`{"error_msg":"expired_jwt_token"}`))
 			return
 		}
 	}
