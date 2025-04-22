@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ridecell/traefik-token-checker/redispool"
+	redispool "github.com/Ridecell/traefik-token-checker/redis"
 )
 
 type Config struct {

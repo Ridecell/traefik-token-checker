@@ -40,4 +40,4 @@ experimental:
   plugins:
     traefik-token-checker:
       moduleName: github.com/Ridecell/traefik-token-checker
-      version: v0.0.1
+      version: v1.0.0
