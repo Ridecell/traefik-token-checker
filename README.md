@@ -3,6 +3,24 @@
 **Traefik Token Checker** is a Traefik middleware plugin that inspects incoming HTTP requests for blacklisted JWT tokens or developer tokens stored in Redis. It acts as a gatekeeper, blocking requests with invalid or revoked tokens before they reach your backend services.
 
 ---
+**There are two ways to develop plugins in Traefik:**
+
+1.  **Wasm PlugPlugin:** 
+
+    ⚠️  Limitation:
+    - Runs in a sandbox — no network, no file access, no Redis.
+
+    - Blocks all unsafe operations for security.
+
+2.  **Yaegi Plugin:**
+
+    ⚠️  Limitation:
+    - Can’t use Redis Go libs like go-redis — they rely on features Yaegi doesn't support (like interfaces, reflection, cgo).
+
+✅ Workaround
+- Use raw TCP to talk to Redis directly (like your custom pool).
+
+---
 
 ## 🔍 What It Does
 

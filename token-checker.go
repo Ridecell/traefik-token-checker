@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	redispool "github.com/Ridecell/traefik-token-checker/redis"
+	redispool "github.com/Ridecell/traefik-token-checker/internal/pkg/redis"
 )
 
 type Config struct {
@@ -86,23 +86,13 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 		defer jwt.redisPool.Put(conn)
-		isAuthBlacklisted := false
-		isDevBlacklisted := false
 
-		isAuthBlacklisted, err = jwt.checkToken(conn, authToken)
-		if err != nil {
-			LoggerERROR.Printf("Error checking auth token: %v", err)
-		}
-
-		isDevBlacklisted, err = jwt.checkToken(conn, devToken)
-		if err != nil {
-			LoggerERROR.Printf("Error checking dev token: %v", err)
-		}
-
-		if isAuthBlacklisted || isDevBlacklisted {
+		// If Either of the token is not valid, then block the request
+		if !(jwt.isTokenBlacklisted(conn, authToken) && jwt.isTokenBlacklisted(conn, devToken)) {
 			LoggerDEBUG.Println("Blacklisted token detected, blocking request")
 			rw.Header().Set("Content-Type", "application/json")
 			if req.Header.Get("origin") != "" {
+				// To avoid CORS error on browser level (Refer issue CAR-27637), we pass Access-Control-Allow-Origin header with Origin domain.
 				rw.Header().Set("Access-Control-Allow-Origin", req.Header.Get("origin"))
 			}
 			rw.WriteHeader(http.StatusUnauthorized)
@@ -114,31 +104,34 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	jwt.next.ServeHTTP(rw, req)
 }
 
-func (jwt *JWT) checkToken(conn net.Conn, rawToken string) (bool, error) {
+func (jwt *JWT) isTokenBlacklisted(conn net.Conn, rawToken string) bool {
 	if !strings.HasPrefix(rawToken, "JWT ") {
-		return false, nil
+		return false
 	}
 
 	token := strings.TrimPrefix(rawToken, "JWT ")
 
 	cmd := fmt.Sprintf("*2\r\n$6\r\nEXISTS\r\n$%d\r\n%s\r\n", len(token), token)
 	if _, err := conn.Write([]byte(cmd)); err != nil {
-		return false, fmt.Errorf("redis EXISTS send failed")
+		LoggerERROR.Println("redis EXISTS send failed")
+		return false
 	}
 
 	reply, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
-		return false, fmt.Errorf("redis EXISTS response read failed")
+		LoggerERROR.Println("redis EXISTS response read failed")
+		return false
 	}
 
 	reply = strings.TrimSpace(reply)
 
 	switch reply {
 	case ":1":
-		return true, nil
+		return true
 	case ":0":
-		return false, nil
+		return false
 	default:
-		return false, fmt.Errorf("unexpected Redis response: %s", reply)
+		LoggerERROR.Printf("unexpected Redis response: %s", reply)
+		return false
 	}
 }
