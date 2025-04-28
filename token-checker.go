@@ -88,7 +88,7 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		defer jwt.redisPool.Put(conn)
 
 		// If Either of the token is not valid, then block the request
-		if !(jwt.isTokenBlacklisted(conn, authToken) && jwt.isTokenBlacklisted(conn, devToken)) {
+		if !(jwt.isTokenValid(conn, authToken) && jwt.isTokenValid(conn, devToken)) {
 			LoggerDEBUG.Println("Blacklisted token detected, blocking request")
 			rw.Header().Set("Content-Type", "application/json")
 			if req.Header.Get("origin") != "" {
@@ -104,7 +104,7 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	jwt.next.ServeHTTP(rw, req)
 }
 
-func (jwt *JWT) isTokenBlacklisted(conn net.Conn, rawToken string) bool {
+func (jwt *JWT) isTokenValid(conn net.Conn, rawToken string) bool {
 	if !strings.HasPrefix(rawToken, "JWT ") {
 		return false
 	}
@@ -127,11 +127,11 @@ func (jwt *JWT) isTokenBlacklisted(conn net.Conn, rawToken string) bool {
 
 	switch reply {
 	case ":1":
-		return true
-	case ":0":
 		return false
+	case ":0":
+		return true
 	default:
 		LoggerERROR.Printf("unexpected Redis response: %s", reply)
-		return false
+		return true
 	}
 }
