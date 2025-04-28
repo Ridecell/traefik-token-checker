@@ -127,8 +127,10 @@ func (jwt *JWT) isTokenValid(conn net.Conn, rawToken string) bool {
 
 	switch reply {
 	case ":1":
+		// This means token found in redis cache which is Blacklisted.
 		return false
 	case ":0":
+		// This means token not found in redis cache. It is not Blacklisted.
 		return true
 	default:
 		LoggerERROR.Printf("unexpected Redis response: %s", reply)
