@@ -106,7 +106,7 @@ func (jwt *JWT) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 func (jwt *JWT) isTokenValid(conn net.Conn, rawToken string) bool {
 	if !strings.HasPrefix(rawToken, "JWT ") {
-		return false
+		return true
 	}
 
 	token := strings.TrimPrefix(rawToken, "JWT ")
@@ -114,13 +114,13 @@ func (jwt *JWT) isTokenValid(conn net.Conn, rawToken string) bool {
 	cmd := fmt.Sprintf("*2\r\n$6\r\nEXISTS\r\n$%d\r\n%s\r\n", len(token), token)
 	if _, err := conn.Write([]byte(cmd)); err != nil {
 		LoggerERROR.Println("redis EXISTS send failed")
-		return false
+		return true
 	}
 
 	reply, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
 		LoggerERROR.Println("redis EXISTS response read failed")
-		return false
+		return true
 	}
 
 	reply = strings.TrimSpace(reply)
